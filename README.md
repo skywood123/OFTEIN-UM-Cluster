@@ -1,6 +1,5 @@
 # OFTEIN-UM-Cluster
-Documentation for OFTEIN++ UM Kubernetes Cluster
-
+This repository is for OFTEIN++ UM Kubernetes Cluster documentation purpose.
 [OFTEIN Documentation](https://github.com/skywood123/OFTEIN-UM-Cluster/blob/main/OFTEIN-documentation.docx) contains the UM site Kubernetes cluster information.
 
 ## Kubernetes Installation
