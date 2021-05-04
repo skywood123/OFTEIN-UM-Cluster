@@ -1,0 +1,66 @@
+systemctl status openvpn-server@server
+cd /etc/openvpn/ccd/
+echo "ifconfig-push 10.8.0.$counter 255.255.255.0" > "$client"
+
+sudo kubeadm token create --ttl 0 --print-join-command
+kubeadm join 10.8.0.1:6443 --token 5t09br.0i0khtd76nte0bm4     --discovery-token-ca-cert-hash sha256:827004767c582621363b728828a46c54199f40d0d356ccb1105d0b60a108f33c
+
+
+#nfs-dynamic provisioner
+https://github.com/kubernetes-retired/external-storage/tree/master/nfs-client
+
+
+#openldap testing to search for a credential
+ldapsearch -LLL -H ldap://127.0.0.1 \
+  -x -D cn=admin,dc=oftein,dc=fsktm,dc=um,dc=edu,dc=my -w ofteinldapadmin \
+  -b dc=oftein,dc=fsktm,dc=um,dc=edu,dc=my
+
+ldapadd -H ldap://127.0.0.1 \
+-x -D cn=admin,dc=oftein,dc=fsktm,dc=um,dc=edu,dc=my -w ofteinldapadmin -f satis.ldif
+
+sudo ./authn 0.0.0.0 cert/privkey.pem cert/fullchain.pem &>/var/log/authn.log &
+
+#Redirecting traffic from tcp 80 to tcp 30080
+#Redirecting traffic from tcp 443 to tcp 30443 // kubernetes-ingress exposed node port
+socat TCP-LISTEN:80,fork TCP:127.0.0.1:30080
+socat TCP-LISTEN:443,fork TCP:127.0.0.1:30443
+
+#allow running in background
+socat TCP-LISTEN:1101,fork TCP:192.168.0.105:21001 &
+kill -9 $(ps | grep "socat" | awk '{ print $1 }')
+
+https://serverfault.com/questions/320614/how-to-forward-port-80-to-another-port-on-the-samemachine/753846
+
+
+#Redirection using ip table
+https://www.cyberciti.biz/faq/linux-port-redirection-with-iptables/
+
+
+#make storageclass default
+kubectl patch storageclass gold -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+#deploying keycloak
+permission error, cannot create
+go to postgresql values.yaml
+change mountpath from /bitasda/postgresql to /bitsadasda solve the problem
+
+
+
+
+#testing with keycloak 
+
+ curl -k -X POST https://keycloak.oftein.fsktm.um.edu.my/auth/realms/Kubernetes/protocol/openid-connect/token \
+-d grant_type=password \
+-d client_id=OFTEIN-UM-KUBERNETES-CLUSTER \
+-d username=testingexternal \
+-d password=testingexternal | jq
+
+
+#creating tls secret
+https://kubernetes.github.io/ingress-nginx/user-guide/tls/
+
+kubectl create secret tls ${CERT_NAME} --key ${KEY_FILE} --cert ${CERT_FILE}
+
+#shell interaction with containers
+
+kubectl exec --stdin --tty shell-demo -- /bin/bash

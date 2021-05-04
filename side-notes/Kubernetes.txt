@@ -1,0 +1,381 @@
+Kubernetes installation steps
+
+1.Install kubeadm
+https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/#verify-mac-address
+1.1 Unique MAC and Product_UUID of the nodes in the cluster
+	
+	ip link / ifconfig -a
+
+	mac:  08:00:27:e3:e3:67
+	
+	sudo cat /sys/class/dmi/id/product_uuid
+	
+	uuid: 39EA11CE-C13B-4273-AA03-B36914857E1F
+
+1.2 Iptables to see bridged traffic
+
+#Check if the module enabled
+	lsmod | grep br_netfilter
+#Enable explicitly
+	sudo modprobe br_netfilter
+	
+	cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+EOF
+	
+	sudo sysctl --system
+
+1.3 Ports requirements
+
+Control-plane/master nodes
+
+	TCP
+	6443*(can change)	API SERVER
+	2379				ETCD 
+	2380				ETCD
+	10250				Kubelet API
+	10251				kube-Scheduler
+	10252				Kube-ControllerManager
+	
+Worker nodes
+	
+	TCP
+	10250 		Kubelet API
+	30000-32767(Nodeport services default port range)
+	
+1.4 Container RunTime (typically Docker)
+#Kubelet communicate with docker to create container
+
+1.4.1 Cgroup drivers(control group)(constraint resources allocate to process)
+
+#Systemd vs cgroupfs(another driver)
+#choose only one else the resources controlled by multiple manager might cause
+#instability
+
+
+1.4.2 Installing Docker
+
+#sudo -i
+
+# (Install Docker CE)
+## Set up the repository:
+### Install packages to allow apt to use a repository over HTTPS
+apt-get update && apt-get install -y \
+  apt-transport-https ca-certificates curl software-properties-common gnupg2
+
+# Add Docker's official GPG key:
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+
+# Add the Docker apt repository:
+add-apt-repository \
+  "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) \
+  stable"
+
+# Install Docker CE
+apt-get update && apt-get install -y \
+  containerd.io=1.2.13-2 \
+  docker-ce=5:19.03.11~3-0~ubuntu-$(lsb_release -cs) \
+  docker-ce-cli=5:19.03.11~3-0~ubuntu-$(lsb_release -cs)
+  
+# Set up the Docker daemon
+cat > /etc/docker/daemon.json <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+
+mkdir -p /etc/systemd/system/docker.service.d
+
+# Restart Docker
+systemctl daemon-reload
+systemctl restart docker
+
+#(optional)start on boot
+sudo systemctl enable docker
+
+
+1.5 Installing kubeadm,kubectl,kubelet
+
+sudo apt-get update && sudo apt-get install -y apt-transport-https curl
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+
+
+1.6 Disable Swap
+
+cat /proc/swaps
+swapoff -a
+
+#remove any swap entry from /etc/fstab
+https://serverfault.com/questions/684771/best-way-to-disable-swap-in-linux
+
+3. HA setup
+
+#Load balancer for kube-apiserver
+
+#Software-based : HAProxy and Keepalived services
+	#In this way, Load-balancer hosts need to be in same subnet
+	# Using vrrp so need to be in same subnet
+	# Create 2 more hosts outside the cluster
+
+https://www.programmersought.com/article/5222255935/
+https://linuxscriptshub.com/haproxy-with-keepalived-setup-for-ubuntu-16-04/
+https://github.com/kubernetes/kubeadm/blob/master/docs/ha-considerations.md#keepalived-and-haproxy
+https://www.tecmint.com/disable-swap-partition-in-centos-ubuntu/
+
+3. Initialize Control-Plane/Master nodes
+
+kubeadm init <args>
+
+kubeadm init --control-plane-endpoint 192.168.0.155:6443 --pod-network-cidr=10.144.0.0/16 --upload-certs 
+
+#Changing api server ip address instead of the default gateway interface ip
+--apiserver-advertise-address=<ip-address>
+
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+You can now join any number of the control-plane node running the following command on each as root:
+
+  kubeadm join 192.168.0.155:6443 --token ych1gm.zgk3uditsjtrn3y1 \
+    --discovery-token-ca-cert-hash sha256:08483c9fd3a1b49c9fcc8eb20eec10ce14cd858422f3dd8c0fc973d046f88e6d \
+    --control-plane --certificate-key 5672f183b675cd02c04105e4850ac391b8b7e138e44c26f9e87831e8964a2500
+                                      
+Please note that the certificate-key gives access to cluster sensitive data, keep it secret!
+As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you can use
+"kubeadm init phase upload-certs --upload-certs" to reload certs afterward.
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 192.168.0.155:6443 --token ych1gm.zgk3uditsjtrn3y1 \
+    --discovery-token-ca-cert-hash sha256:08483c9fd3a1b49c9fcc8eb20eec10ce14cd858422f3dd8c0fc973d046f88e6d
+
+kubeadm join 203.80.21.30:16443 --token o2026w.9gjlm2dj505y3xcz  \
+   --discovery-token-ca-cert-hash sha256:335d150a388631bd80fffef809509bfadd889e189effe6c14f6de4fa24ce5359 \
+  --control-plane --certificate-key f288e03207c62f03a93e5b5d3a6f760d3d379e627ea323e3eade8a650a8aa9fb
+
+
+//apply CNI using Calico in this case
+kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+
+#Grab token ( expires after 24 hours)
+kubeadm token list
+
+#Generate token
+kubeadm token create
+
+kubeadm join 192.168.0.155:6443 --token b79pxt.hia1v562x0m5ulko \
+    --discovery-token-ca-cert-hash sha256:fe0058c00ff4559a4cd352806c72705d4e5f775aa4f499f46b99fe2e101072b6
+	
+kubeadm join 203.80.21.30:16443 --token ykn8ek.p1w4njsby76zphaf \
+    --discovery-token-ca-cert-hash sha256:335d150a388631bd80fffef809509bfadd889e189effe6c14f6de4fa24ce5359	
+	
+	
+	
+kubeadm join 203.80.21.30:16443 --token h6nayh.njbxwyd655pn1b11 \
+    --discovery-token-ca-cert-hash sha256:335d150a388631bd80fffef809509bfadd889e189effe6c14f6de4fa24ce5359
+
+kubeadm join 192.168.0.155:6443 --token unrrvu.u4pu7zobhs4ng067 \
+    --discovery-token-ca-cert-hash sha256:335d150a388631bd80fffef809509bfadd889e189effe6c14f6de4fa24ce5359
+	
+#Certificate last for 24h
+#Get the cert
+openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | \
+   openssl dgst -sha256 -hex | sed 's/^.* //'
+   
+   
+//Starting dashboard/GUI for kubernetes
+#https://github.com/kubernetes/dashboard/blob/master/docs/user/installation.md#recommended-setup
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0/aio/deploy/recommended.yaml
+
+//Need to take action in exposing the dashboard to be accessible
+//kubectl proxy ; we can access the dashboard if same machine with localhost:8xxx
+
+//to access dashboard with a host interface ip:port
+//https://www.thegeekdiary.com/how-to-access-kubernetes-dashboard-externally/
+kubectl -n kubernetes-dashboard edit service kubernetes-dashboard
+#change the ClusterIp to NodePort
+
+kubectl -n kubernetes-dashboard get services
+
+#observer the port and go to https://hostip:port
+ 
+
+//Getting token to access the dashboard/GUI
+//Seems like insecure to expose to public Internet
+kubectl -n kubernetes-dashboard describe $(kubectl -n kubernetes-dashboard get secret -n kubernetes-dashboard -o name) | grep token
+
+
+//Change kubelet ip address declared
+sudo nano /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+
+#Add in this line at end of execstart
+--node-ip 10.8.0.2 (example ip)
+
+sudo systemctl daemon-reload
+sudo systemctl restart kubelet
+sudo systemctl status kubelet.service
+
+
+
+//install nginx
+https://docs.nginx.com/nginx-ingress-controller/installation/installation-with-helm/
+
+
+//create tls secret
+kubectl create secret tls testsecret --key privkey.pem --cert fullchain.pem
+
+//restart deployment
+kubectl rollout restart deployment [deployment_name]
+
+
+//use your own certificate in kubernetes-dashboard
+https://github.com/kubernetes/dashboard/issues/2995
+
+
+//enable nginx-ingress ssl-passthrough
+#go to the deployment file
+#add in argument # https://stackoverflow.com/questions/59878060/ssl-passthrough-not-being-configured-for-ingress-nginx-backend
+
+args:
+ - --enable-ssl-passthrough
+ 
+#restart the deployment  #might change the worker node , check it back
+
+
+#checking logs
+https://kubernetes.github.io/ingress-nginx/troubleshooting/
+
+
+//on worker node
+//to mount nfs storage and schedule pod on it
+sudo apt install nfs-common 
+
+//kubectl port forwarding #temporary       # acccess from machine running this command
+kubectl port-forward svc/mykeycloak-http 8022:80
+
+
+
+//upgrading configuration with kubeadm
+kubeadm upgrade apply --config /etc/kubeadm.yaml
+
+----------------------------
+nfs
+-----------------------------
+https://github.com/helm/charts/tree/master/stable/nfs-client-provisioner
+
+------------------------------------
+setting up openldap and webhook service
+------------------------------------
+https://learnk8s.io/kubernetes-custom-authentication
+https://icicimov.github.io/blog/virtualization/Kubernetes-LDAP-Authentication/
+
+
+https://raw.githubusercontent.com/learnk8s/authentication/master/authn.go
+https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+
+
+
+-----------------------------------
+securing kubelet
+-----------------------------------
+https://www.cyberark.com/resources/threat-research-blog/using-kubelet-client-to-attack-the-kubernetes-cluster
+
+
+--------------------------------------
+keycloak
+---------------------------------------
+https://devopstales.github.io/sso/k8s-dasboard-auth/
+https://itnext.io/protect-kubernetes-dashboard-with-openid-connect-104b9e75e39c
+
+
+
+--------------------------
+redirecting ports
+--------------------------
+socat TCP-LISTEN:443,fork TCP:127.0.0.1:30443
+
+
+
+
+
+
+-----------------------
+keycloak
+-------------------------
+https://www.openshift.com/blog/adding-authentication-to-your-kubernetes-web-applications-with-keycloak
+
+finetuning helm chart
+
+1)postgresql
+- in values.yaml, change mount path from /bitnami/posg to /bitnami
+
+2) create new ingress for it
+
+3) keycloak/templates/statefulset
+
+-add in proxy forward address
+-ssl terminate on ingress, there will be redirecting error happening
+-adding proxy forward address = true as env to the statefulset solve the problem
+
+ofteinadmin
+fn!xo!ska!
+
+https://medium.com/faun/kubernetes-auth-e2f342a5f269
+
+#keycloak id token keep refreshing, might expired if u use a previously stored one
+
+OFTEIN-UM-KUBERNETES-CLUSTER
+
+
+        oidc-issuer-url: https://keycloak.oftein.fsktm.um.edu.my/auth/realms/Kubernetes
+        oidc-client-id: OFTEIN-UM-KUBERNETES-CLUSTER
+        oidc-username-claim: sub
+        oidc-ca-file: /home/tein/smarterOftein2020/certs/fullchain.pem
+		
+		
+		
+		
+calico 
+
+https://docs.projectcalico.org/networking/ip-autodetection
+
+IP_AUTODETECTION_METHOD:            interface=eno1
+
+
+
+----------------------------
+prometheus
+-----------------------------
+https://sysdig.com/blog/kubernetes-monitoring-prometheus/
+
+https://grafana.com/blog/2020/02/25/step-by-step-guide-to-setting-up-prometheus-alertmanager-with-slack-pagerduty-and-gmail/
+https://medium.com/@_ipeacocks/alertmanager-prometheus-notification-configuration-in-kubernetes-fcf63c3517ef
+
+Z2xvYmFsOgogIHJlc29sdmVfdGltZW91dDogNW0KcmVjZWl2ZXJzOgotIG5hbWU6ICJudWxsIgpyb3V0ZToKICBncm91cF9ieToKICAtIGpvYgogIGdyb3VwX2ludGVydmFsOiA1bQogIGdyb3VwX3dhaXQ6IDMwcwogIHJlY2VpdmVyOiAibnVsbCIKICByZXBlYXRfaW50ZXJ2YWw6IDEyaAogIHJvdXRlczoKICAtIG1hdGNoOgogICAgICBhbGVydG5hbWU6IFdhdGNoZG9nCiAgICByZWNlaXZlcjogIm51bGwi
+
+ sudo iptables -A IN_public_allow -p tcp --dport 179 -j ACCEPT
+ sudo iptables -A IN_public_allow -p tcp --dport 10250 -j ACCEPT
+ sudo iptables -L IN_public_allow --line-number

@@ -1,0 +1,19 @@
+certbot --preferred-challenges dns certonly --manual -d 'oftein.fsktm.um.edu.my,*.oftein.fsktm.um.edu.my'
+
+sudo -i
+cd /etc/bind/
+nano db.oftein
+
+// insert DNS TXT record here
+
+// if using certbot challenge with dns preferred(only dns) , will need to insert 2 record
+
+open up another terminal
+
+systemctl restart bind9       //restart DNS name server to update the database records
+systemctl status bind9
+
+
+//certificate path
+
+/etc/letsencrypt/live/oftein.fsktm.um.edu.my/
